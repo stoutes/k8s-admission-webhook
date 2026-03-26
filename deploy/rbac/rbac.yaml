@@ -1,0 +1,61 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: admission-webhook
+  namespace: webhook-system
+---
+# Namespace-scoped: allow the webhook pod to read its own ConfigMaps.
+# Do NOT grant secret read here — the TLS secret is mounted as a volume,
+# so the pod never needs API access to it.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: admission-webhook
+  namespace: webhook-system
+rules:
+- apiGroups: [""]
+  resources: ["configmaps"]
+  resourceNames: ["envoy-config", "webhook-config"]
+  verbs: ["get", "watch", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: admission-webhook
+  namespace: webhook-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: admission-webhook
+subjects:
+- kind: ServiceAccount
+  name: admission-webhook
+  namespace: webhook-system
+---
+# Cluster-scoped: allow the webhook to read pods, namespaces, and deployments
+# when making policy decisions in the validating handler.
+# Scope this tightly — only add verbs/resources you actually use.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: admission-webhook-reader
+rules:
+- apiGroups: [""]
+  resources: ["pods", "namespaces"]
+  verbs: ["get", "list"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets"]
+  verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: admission-webhook-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: admission-webhook-reader
+subjects:
+- kind: ServiceAccount
+  name: admission-webhook
+  namespace: webhook-system

@@ -1,0 +1,55 @@
+# Step 1: Self-signed bootstrapper — issues nothing directly, just signs the CA cert below.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: selfsigned-root
+spec:
+  selfSigned: {}
+---
+# Step 2: The CA certificate itself (isCA: true).
+# cert-manager stores the keypair in webhook-ca-secret.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: webhook-ca
+  namespace: webhook-system
+spec:
+  isCA: true
+  commonName: webhook-ca
+  secretName: webhook-ca-secret
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: selfsigned-root
+    kind: ClusterIssuer
+---
+# Step 3: Namespace-scoped Issuer that signs using the CA above.
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: webhook-ca-issuer
+  namespace: webhook-system
+spec:
+  ca:
+    secretName: webhook-ca-secret
+---
+# Step 4: The actual TLS cert for the webhook server.
+# cert-manager writes tls.crt + tls.key into admission-webhook-tls secret.
+# The inject-ca-from annotation on the WebhookConfiguration objects causes
+# cert-manager to automatically patch the caBundle field on every rotation.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: admission-webhook-tls
+  namespace: webhook-system
+spec:
+  secretName: admission-webhook-tls
+  duration: 8760h    # 1 year
+  renewBefore: 720h  # rotate 30 days before expiry
+  dnsNames:
+  - admission-webhook.webhook-system.svc
+  - admission-webhook.webhook-system.svc.cluster.local
+  issuerRef:
+    name: webhook-ca-issuer
+    kind: Issuer

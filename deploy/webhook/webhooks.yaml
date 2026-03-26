@@ -1,0 +1,69 @@
+# The inject-ca-from annotation tells cert-manager to automatically patch
+# the caBundle field on every certificate rotation. No manual base64 needed.
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: sidecar-injector
+  annotations:
+    cert-manager.io/inject-ca-from: webhook-system/admission-webhook-tls
+webhooks:
+- name: sidecar-injector.webhook-system.svc
+  admissionReviewVersions: ["v1"]
+  sideEffects: None
+  clientConfig:
+    service:
+      name: admission-webhook
+      namespace: webhook-system
+      path: /mutate
+      port: 443
+  rules:
+  - operations: ["CREATE"]
+    apiGroups: [""]
+    apiVersions: ["v1"]
+    resources: ["pods"]
+    scope: Namespaced
+  # Only intercept namespaces that have opted in.
+  # This also prevents the webhook from intercepting kube-system,
+  # which would deadlock the cluster if the webhook pod is unhealthy.
+  namespaceSelector:
+    matchLabels:
+      webhook-injection: enabled
+  # objectSelector lets pods opt out without requiring namespace-level changes.
+  objectSelector:
+    matchExpressions:
+    - key: sidecar-injector.webhook-system/inject
+      operator: NotIn
+      values: ["false"]
+  failurePolicy: Fail
+  timeoutSeconds: 10
+  reinvocationPolicy: Never
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: resource-policy-validator
+  annotations:
+    cert-manager.io/inject-ca-from: webhook-system/admission-webhook-tls
+webhooks:
+- name: resource-policy.webhook-system.svc
+  admissionReviewVersions: ["v1"]
+  sideEffects: None
+  clientConfig:
+    service:
+      name: admission-webhook
+      namespace: webhook-system
+      path: /validate
+      port: 443
+  rules:
+  - operations: ["CREATE", "UPDATE"]
+    apiGroups: ["apps"]
+    apiVersions: ["v1"]
+    resources: ["deployments"]
+    scope: Namespaced
+  namespaceSelector:
+    matchExpressions:
+    - key: kubernetes.io/metadata.name
+      operator: NotIn
+      values: ["kube-system", "kube-public", "cert-manager", "webhook-system"]
+  failurePolicy: Fail
+  timeoutSeconds: 10

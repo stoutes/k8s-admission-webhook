@@ -1,0 +1,110 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: admission-webhook
+  namespace: webhook-system
+  labels:
+    app: admission-webhook
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: admission-webhook
+  template:
+    metadata:
+      labels:
+        app: admission-webhook
+    spec:
+      serviceAccountName: admission-webhook
+      # Don't mount the SA token unless the webhook actually calls the k8s API
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: webhook
+        image: yourregistry/admission-webhook:latest
+        imagePullPolicy: Always
+        args:
+        - -tls-cert=/etc/webhook/certs/tls.crt
+        - -tls-key=/etc/webhook/certs/tls.key
+        - -port=8443
+        ports:
+        - name: https
+          containerPort: 8443
+          protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 8443
+            scheme: HTTPS
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8443
+            scheme: HTTPS
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 128Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
+        volumeMounts:
+        - name: tls-certs
+          mountPath: /etc/webhook/certs
+          readOnly: true
+      volumes:
+      - name: tls-certs
+        secret:
+          secretName: admission-webhook-tls
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: DoNotSchedule
+        labelSelector:
+          matchLabels:
+            app: admission-webhook
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: admission-webhook
+  namespace: webhook-system
+spec:
+  selector:
+    app: admission-webhook
+  ports:
+  - name: https
+    port: 443
+    targetPort: 8443
+    protocol: TCP
+---
+# ConfigMap referenced by the injected envoy sidecar volume.
+# Adjust the envoy config as needed for your mesh setup.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: envoy-config
+  namespace: webhook-system
+data:
+  envoy.yaml: |
+    admin:
+      address:
+        socket_address:
+          address: 0.0.0.0
+          port_value: 9901
+    static_resources:
+      listeners: []
+      clusters: []
