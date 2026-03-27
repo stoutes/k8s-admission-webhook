@@ -4,16 +4,16 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/go-logr/logr"
 	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"go.uber.org/zap"
 
-	"github.com/yourorg/k8s-admission-webhook/internal/admission"
+	"github.com/stoutes/k8s-admission-webhook/internal/admission"
 )
 
 const (
-	annotationInject  = "sidecar-injector.webhook-system/inject"
+	annotationInject   = "sidecar-injector.webhook-system/inject"
 	annotationInjected = "sidecar-injector.webhook-system/injected"
 )
 
@@ -48,11 +48,11 @@ var sidecarVolume = corev1.Volume{
 }
 
 // Handler returns an http.HandlerFunc for the /mutate endpoint.
-func Handler(log *zap.Logger) http.HandlerFunc {
+func Handler(log logr.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		review, err := admission.Decode(r)
 		if err != nil {
-			log.Error("decode failed", zap.Error(err))
+			log.Error(err, "decode failed")
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -61,31 +61,31 @@ func Handler(log *zap.Logger) http.HandlerFunc {
 		review.Response.UID = review.Request.UID
 
 		if err := admission.Encode(w, review); err != nil {
-			log.Error("encode failed", zap.Error(err))
+			log.Error(err, "encode failed")
 		}
 	}
 }
 
-func mutate(log *zap.Logger, req *admissionv1.AdmissionRequest) *admissionv1.AdmissionResponse {
+func mutate(log logr.Logger, req *admissionv1.AdmissionRequest) *admissionv1.AdmissionResponse {
 	var pod corev1.Pod
 	if err := json.Unmarshal(req.Object.Raw, &pod); err != nil {
 		return admission.Err("unmarshal pod: " + err.Error())
 	}
 
 	log.Info("mutate request",
-		zap.String("namespace", req.Namespace),
-		zap.String("name", req.Name),
+		"namespace", req.Namespace,
+		"name", req.Name,
 	)
 
 	// Opt-out: annotation explicitly disables injection
 	if pod.Annotations[annotationInject] == "false" {
-		log.Info("injection opted out", zap.String("pod", req.Name))
+		log.Info("injection opted out", "pod", req.Name)
 		return admission.Allow("injection opted out")
 	}
 
 	// Idempotency: skip if already injected
 	if pod.Annotations[annotationInjected] == "true" {
-		log.Info("already injected", zap.String("pod", req.Name))
+		log.Info("already injected", "pod", req.Name)
 		return admission.Allow("already injected")
 	}
 
@@ -96,7 +96,7 @@ func mutate(log *zap.Logger, req *admissionv1.AdmissionRequest) *admissionv1.Adm
 		return admission.Err(err.Error())
 	}
 
-	log.Info("sidecar injected", zap.String("pod", req.Name), zap.Int("patches", len(patches)))
+	log.Info("sidecar injected", "pod", req.Name, "patches", len(patches))
 	return resp
 }
 

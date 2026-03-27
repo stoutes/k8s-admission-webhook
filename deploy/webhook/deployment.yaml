@@ -30,23 +30,32 @@ spec:
         args:
         - -tls-cert=/etc/webhook/certs/tls.crt
         - -tls-key=/etc/webhook/certs/tls.key
-        - -port=8443
+        - -webhook-port=8443
+        - -metrics-addr=:8080
+        - -probe-addr=:8081
+        - -leader-elect=true
         ports:
         - name: https
           containerPort: 8443
           protocol: TCP
+        - name: metrics
+          containerPort: 8080
+          protocol: TCP
+        - name: healthz
+          containerPort: 8081
+          protocol: TCP
         readinessProbe:
           httpGet:
-            path: /healthz
-            port: 8443
-            scheme: HTTPS
+            path: /readyz
+            port: 8081
+            scheme: HTTP
           initialDelaySeconds: 5
           periodSeconds: 10
         livenessProbe:
           httpGet:
             path: /healthz
-            port: 8443
-            scheme: HTTPS
+            port: 8081
+            scheme: HTTP
           initialDelaySeconds: 15
           periodSeconds: 20
         resources:

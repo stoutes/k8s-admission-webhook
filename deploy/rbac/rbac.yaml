@@ -42,7 +42,13 @@ metadata:
 rules:
 - apiGroups: [""]
   resources: ["pods", "namespaces"]
-  verbs: ["get", "list"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["patch"]
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["create", "patch"]
 - apiGroups: ["apps"]
   resources: ["deployments", "replicasets"]
   verbs: ["get", "list"]
@@ -55,6 +61,35 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: admission-webhook-reader
+subjects:
+- kind: ServiceAccount
+  name: admission-webhook
+  namespace: webhook-system
+---
+# Leader election — required by controller-runtime when leader-elect=true.
+# Allows the controller to create/update the lease lock object.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: admission-webhook-leader-election
+  namespace: webhook-system
+rules:
+- apiGroups: ["coordination.k8s.io"]
+  resources: ["leases"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["create", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: admission-webhook-leader-election
+  namespace: webhook-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: admission-webhook-leader-election
 subjects:
 - kind: ServiceAccount
   name: admission-webhook
